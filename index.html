@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <!-- head content unchanged -->
+</head>
+<body>
+  <div id="app">
+    <!-- existing HTML structure unchanged -->
+  </div>
+  <script>
+    const app = Vue.createApp({
+      data() {
+        return {
+          questions: [],
+          wrongQuestions: JSON.parse(localStorage.getItem('ocp_wrong_questions') || '[]'),
+          correctQuestions: JSON.parse(localStorage.getItem('ocp_correct_questions') || '[]'),
+          currentIndex: 0,
+          selectedAnswers: [],
+          result: null,
+          quizOver: false,
+          mode: 'sequential',
+          currentQuestion: null,
+          loading: true
+        };
+      },
+      computed: {
+        modeLabel() {
+          return this.mode === 'sequential' ? '切换为随机模式' : '切换为顺序模式';
+        }
+      },
+      methods: {
+        async fetchQuestions() {
+          this.loading = true;
+          try {
+            const response = await fetch('./questions.json');
+            const data = await response.json();
+            this.questions = data.filter(q => !this.correctQuestions.some(cq => cq.question === q.question));
+            if (this.mode === 'random') {
+              this.questions = this.questions.map(q => ({
+                ...q,
+                selections: this.shuffleSelections(q.selections)
+              }));
+            }
+          } catch (error) {
+            console.error('加载题目失败:', error);
+            alert('加载题目失败，请检查网络连接。');
+          }
+          this.loading = false;
+        },
+        shuffleSelections(selections) {
+          const entries = Object.entries(selections);
+          for (let i = entries.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [entries[i], entries[j]] = [entries[j], entries[i]];
+          }
+          return Object.fromEntries(entries);
+        },
+        renderMarkdown(markdown) {
+          return marked.parse(markdown);
+        },
+        toggleMode() {
+          this.mode = this.mode === 'sequential' ? 'random' : 'sequential';
+          this.startAllQuestions();
+        },
+        startAllQuestions() {
+          this.fetchQuestions().then(() => {
+            this.shuffleIfNeeded();
+            this.resetQuiz();
+          });
+        },
+        startWrongQuestions() {
+          if (this.wrongQuestions.length === 0) {
+            alert("暂无错题可刷");
+            return;
+          }
+          this.questions = [...this.wrongQuestions];
+          this.shuffleIfNeeded();
+          if (this.mode === 'random') {
+            this.questions = this.questions.map(q => ({
+              ...q,
+              selections: this.shuffleSelections(q.selections)
+            }));
+          }
+          this.resetQuiz();
+        },
+        shuffleIfNeeded() {
+          if (this.mode === 'random') {
+            this.questions.sort(() => Math.random() - 0.5);
+          }
+        },
+        resetQuiz() {
+          this.currentIndex = 0;
+          this.result = null;
+          this.selectedAnswers = [];
+          this.quizOver = false;
+          this.currentQuestion = this.questions[this.currentIndex];
+        },
+        submitAnswer() {
+          const correct = this.currentQuestion.answers;
+          const selected = [...this.selectedAnswers].sort();
+          const correctSorted = [...correct].sort();
+
+          let statusText = '', statusClass = '';
+          if (JSON.stringify(selected) === JSON.stringify(correctSorted)) {
+            statusText = '完全正确';
+            statusClass = 'correct';
+            this.correctQuestions.push(this.currentQuestion);
+            localStorage.setItem('ocp_correct_questions', JSON.stringify(this.correctQuestions));
+          } else if (selected.some(a => correct.includes(a))) {
+            statusText = '部分正确';
+            statusClass = 'partial';
+          } else {
+            statusText = '完全错误';
+            statusClass = 'wrong';
+          }
+
+          this.result = {
+            statusText,
+            statusClass,
+            correctAnswers: correct,
+            summary: this.currentQuestion.summary,
+            suggestion: this.currentQuestion.suggestion
+          };
+
+          if (statusText !== '完全正确') {
+            this.addToWrongQuestions();
+          }
+        },
+        addToWrongQuestions() {
+          const q = this.currentQuestion;
+          const exists = this.wrongQuestions.some(item => item.question === q.question);
+          if (!exists) {
+            this.wrongQuestions.push(q);
+            localStorage.setItem('ocp_wrong_questions', JSON.stringify(this.wrongQuestions));
+          }
+        },
+        nextQuestion() {
+          this.currentIndex++;
+          this.selectedAnswers = [];
+          this.result = null;
+
+          if (this.currentIndex < this.questions.length) {
+            this.currentQuestion = this.questions[this.currentIndex];
+          } else {
+            this.currentQuestion = null;
+            this.quizOver = true;
+          }
+        },
+        clearCache() {
+          const ok = confirm("清除所有做题记录吗？")
+          if (ok) {
+            localStorage.clear()
+            location.reload()
+          }
+        }
+      },
+      mounted() {
+        this.startAllQuestions();
+      }
+    });
+    app.mount('#app');
+  </script>
+</body>
+</html>
