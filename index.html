@@ -35,25 +35,33 @@
             const response = await fetch('./questions.json');
             const data = await response.json();
             this.questions = data.filter(q => !this.correctQuestions.some(cq => cq.question === q.question));
-            if (this.mode === 'random') {
-              this.questions = this.questions.map(q => ({
-                ...q,
-                selections: this.shuffleSelections(q.selections)
-              }));
-            }
           } catch (error) {
             console.error('加载题目失败:', error);
             alert('加载题目失败，请检查网络连接。');
           }
           this.loading = false;
         },
-        shuffleSelections(selections) {
+        shuffleSelections(selections, originalAnswers) {
           const entries = Object.entries(selections);
           for (let i = entries.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [entries[i], entries[j]] = [entries[j], entries[i]];
           }
-          return Object.fromEntries(entries);
+          const newSelections = {};
+          const answerTexts = originalAnswers.map(key => selections[key]);
+          const newAnswers = [];
+          const labels = ['A', 'B', 'C', 'D', 'E'];
+          entries.forEach(([_, text], index) => {
+            const newKey = labels[index];
+            newSelections[newKey] = text;
+            if (answerTexts.includes(text)) {
+              newAnswers.push(newKey);
+            }
+          });
+          return {
+            selections: newSelections,
+            answers: newAnswers
+          };
         },
         renderMarkdown(markdown) {
           return marked.parse(markdown);
@@ -64,7 +72,17 @@
         },
         startAllQuestions() {
           this.fetchQuestions().then(() => {
-            this.shuffleIfNeeded();
+            if (this.mode === 'random') {
+              this.questions.sort(() => Math.random() - 0.5);
+              this.questions = this.questions.map(q => {
+                const { selections, answers } = this.shuffleSelections(q.selections, q.answers);
+                return {
+                  ...q,
+                  selections,
+                  answers
+                };
+              });
+            }
             this.resetQuiz();
           });
         },
@@ -74,19 +92,18 @@
             return;
           }
           this.questions = [...this.wrongQuestions];
-          this.shuffleIfNeeded();
-          if (this.mode === 'random') {
-            this.questions = this.questions.map(q => ({
-              ...q,
-              selections: this.shuffleSelections(q.selections)
-            }));
-          }
-          this.resetQuiz();
-        },
-        shuffleIfNeeded() {
           if (this.mode === 'random') {
             this.questions.sort(() => Math.random() - 0.5);
+            this.questions = this.questions.map(q => {
+              const { selections, answers } = this.shuffleSelections(q.selections, q.answers);
+              return {
+                ...q,
+                selections,
+                answers
+              };
+            });
           }
+          this.resetQuiz();
         },
         resetQuiz() {
           this.currentIndex = 0;
